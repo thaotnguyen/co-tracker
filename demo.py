@@ -5,10 +5,12 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
+import time
 import torch
 import argparse
 import numpy as np
 
+from skimage.transform import rescale
 from PIL import Image
 from cotracker.utils.visualizer import Visualizer, read_video_from_path
 from cotracker.predictor import CoTrackerPredictor
@@ -30,12 +32,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--video_path",
-        default="./assets/apple.mp4",
+        default="./assets/7s-960x540.mp4",
         help="path to a video",
     )
     parser.add_argument(
         "--mask_path",
-        default="./assets/apple_mask.png",
+        default="./assets/960x540_redone.png",
         help="path to a segmentation mask",
     )
     parser.add_argument(
@@ -44,7 +46,7 @@ if __name__ == "__main__":
         default=None,
         help="CoTracker model parameters",
     )
-    parser.add_argument("--grid_size", type=int, default=10, help="Regular grid size")
+    parser.add_argument("--grid_size", type=int, default=30, help="Regular grid size")
     parser.add_argument(
         "--grid_query_frame",
         type=int,
@@ -62,9 +64,21 @@ if __name__ == "__main__":
 
     # load the input video frame by frame
     video = read_video_from_path(args.video_path)
+    num_frames, height, width, _ = np.shape(video)
+    print(np.shape(video), video.dtype)
     video = torch.from_numpy(video).permute(0, 3, 1, 2)[None].float()
+    print("b")
     segm_mask = np.array(Image.open(os.path.join(args.mask_path)))
     segm_mask = torch.from_numpy(segm_mask)[None, None]
+
+    queries = torch.tensor([
+        [0., 400., 350.],  # point tracked from the first frame
+        [10., 600., 500.], # frame number 10
+        [20., 750., 600.], # ...
+        [30., 900., 200.]
+    ])
+    if torch.cuda.is_available():
+        queries = queries.cuda()
 
     if args.checkpoint is not None:
         model = CoTrackerPredictor(checkpoint=args.checkpoint)
@@ -73,18 +87,22 @@ if __name__ == "__main__":
     model = model.to(DEFAULT_DEVICE)
     video = video.to(DEFAULT_DEVICE)
     # video = video[:, :20]
+    start_time = time.time()
     pred_tracks, pred_visibility = model(
         video,
-        grid_size=args.grid_size,
-        grid_query_frame=args.grid_query_frame,
-        backward_tracking=args.backward_tracking,
+        queries[None],
+        # grid_size=args.grid_size,
+        # grid_query_frame=args.grid_query_frame,
+        # backward_tracking=args.backward_tracking,
         # segm_mask=segm_mask
     )
+    end_time = time.time()
     print("computed")
+    print("Total time: " + str(end_time - start_time))
 
     # save a video with predicted tracks
     seq_name = args.video_path.split("/")[-1]
-    vis = Visualizer(save_dir="./saved_videos", pad_value=120, linewidth=3)
+    vis = Visualizer(save_dir="./saved_videos", pad_value=120, linewidth=1)
     vis.visualize(
         video,
         pred_tracks,

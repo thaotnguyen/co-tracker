@@ -225,11 +225,14 @@ class CoTrackerOnlinePredictor(torch.nn.Module):
 
                 if segm_mask is not None:
                     segm_mask = F.interpolate(segm_mask, tuple(self.interp_shape), mode="nearest")
+                    print(np.shape(segm_mask))
                     point_mask = segm_mask[0, 0][
                         (grid_pts[0, :, 1]).round().long().cpu(),
                         (grid_pts[0, :, 0]).round().long().cpu(),
                     ].bool()
+                    print(np.shape(point_mask))
                     grid_pts = grid_pts[:, point_mask]
+                    print(np.shape(grid_pts))
 
                 queries = torch.cat(
                     [torch.ones_like(grid_pts[:, :, :1]) * grid_query_frame, grid_pts],

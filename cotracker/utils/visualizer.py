@@ -7,6 +7,7 @@ import os
 import numpy as np
 import imageio
 import torch
+import ipdb
 
 from matplotlib import cm
 import torch.nn.functional as F
@@ -86,6 +87,7 @@ class Visualizer:
         video: torch.Tensor,  # (B,T,C,H,W)
         tracks: torch.Tensor,  # (B,T,N,2)
         visibility: torch.Tensor = None,  # (B, T, N, 1) bool
+        queries: torch.Tensor = None,
         gt_tracks: torch.Tensor = None,  # (B,T,N,2)
         segm_mask: torch.Tensor = None,  # (B,1,H,W)
         filename: str = "video",
@@ -114,16 +116,19 @@ class Visualizer:
             video = transform(video)
             video = video.repeat(1, 1, 3, 1, 1)
 
+        print("Drawing tracks on video...")
         res_video = self.draw_tracks_on_video(
             video=video,
             tracks=tracks,
             visibility=visibility,
             segm_mask=segm_mask,
             gt_tracks=gt_tracks,
+            queries=queries,
             query_frame=query_frame,
             compensate_for_camera_motion=compensate_for_camera_motion,
         )
         if save_video:
+            print("Saving video...")
             self.save_video(res_video, filename=filename, writer=writer, step=step)
         return res_video
 
@@ -161,6 +166,7 @@ class Visualizer:
         visibility: torch.Tensor = None,
         segm_mask: torch.Tensor = None,
         gt_tracks=None,
+        queries: torch.Tensor = None,
         query_frame: int = 0,
         compensate_for_camera_motion=False,
     ):
@@ -253,22 +259,25 @@ class Visualizer:
         #  draw points
         for t in range(query_frame, T):
             img = Image.fromarray(np.uint8(res_video[t]))
-            for i in range(N):
-                coord = (tracks[t, i, 0], tracks[t, i, 1])
-                visibile = True
-                if visibility is not None:
-                    visibile = visibility[0, t, i]
-                if coord[0] != 0 and coord[1] != 0:
-                    if not compensate_for_camera_motion or (
-                        compensate_for_camera_motion and segm_mask[i] > 0
-                    ):
-                        img = draw_circle(
-                            img,
-                            coord=coord,
-                            radius=int(self.linewidth * 2),
-                            color=vector_colors[t, i].astype(int),
-                            visible=visibile,
-                        )
+            print('{}% processed\r'.format(t*100 // T), end='')
+            points_seen_by_current_frame = next((i for i, p in enumerate(queries) if p[0] > t), None)
+            if points_seen_by_current_frame: 
+                for i in range(points_seen_by_current_frame):
+                    coord = (tracks[t, i, 0], tracks[t, i, 1])
+                    visibile = True
+                    if visibility is not None:
+                        visibile = visibility[0, t, i]
+                    if coord[0] != 0 and coord[1] != 0:
+                        if not compensate_for_camera_motion or (
+                            compensate_for_camera_motion and segm_mask[i] > 0
+                        ):
+                            img = draw_circle(
+                                img,
+                                coord=coord,
+                                radius=int(self.linewidth * 2),
+                                color=vector_colors[t, i].astype(int),
+                                visible=visibile,
+                            )
             res_video[t] = np.array(img)
 
         #  construct the final rgb sequence
